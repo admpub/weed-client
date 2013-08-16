@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package weedS3
+package weed
 
 import (
 	"bytes"
@@ -30,6 +30,81 @@ import (
 	"strings"
 	"time"
 )
+
+// Debug if you want log messages
+var Debug bool
+
+type WeedClient string
+
+func NewWeedClient(masterURL string) WeedClient {
+	return WeedClient(masterURL)
+}
+
+func (w WeedClient) URL() string {
+	return string(w)
+}
+
+// Upload uploads the named file, Assigning a new fileID, and returning it
+func (w WeedClient) Upload(filename, contentType string, body io.Reader) (fileID string, err error) {
+	var publicURL string
+	if fileID, publicURL, err = w.AssignFid(); err != nil {
+		return
+	}
+	_, err = w.UploadAssigned(fileID, publicURL, filename, contentType, body)
+	return
+}
+
+// Upload uploads the named file using the Assign-returned fileID and publicURL
+func (w WeedClient) UploadAssigned(fileID, publicURL, filename, contentType string, body io.Reader) (url string, err error) {
+	url = "http://" + publicURL + "/" + fileID
+	var respBody []byte
+	var e error
+	for i := 0; i < 3; i++ {
+		respBody, e = post(url, filename, contentType, body)
+		if e != nil {
+			log.Println(e)
+			err = fmt.Errorf("error POSTing to %s: %s", url, e)
+			time.Sleep(1 * time.Second)
+		} else {
+			break
+		}
+	}
+	debug("POST %s response: %s", url, respBody)
+
+	return
+}
+
+// Download downloads the given fileID
+func (wm WeedClient) Download(fileID string) (io.ReadCloser, error) {
+	url, err := wm.getFidURL(fileID)
+	if err != nil {
+		return nil, err
+	}
+	return getURL(url, "")
+}
+
+// Delete deletes the given fileID
+func (wm WeedClient) Delete(fileID string) error {
+	url, err := wm.getFidURL(fileID)
+	if err != nil {
+		return err
+	}
+	body, err := getURL(url, "DELETE")
+	if body != nil {
+		body.Close()
+	}
+	return err
+}
+
+// AssignFid assigns a new fileID
+func (w WeedClient) AssignFid() (fileID, publicURL string, err error) {
+	var resp weedAssignResponse
+	err = masterGet(&resp, w.URL()+"/dir/assign")
+	if err == nil && resp.Fid == "" {
+		err = errors.New("no file id!")
+	}
+	return resp.Fid, resp.PublicURL, err
+}
 
 // {"count":1,"fid":"3,01637037d6","url":"127.0.0.1:8080","publicUrl":"localhost:8080"}
 type weedAssignResponse struct {
@@ -48,30 +123,12 @@ type wmLocation struct {
 	URL       string `json:"url"`
 }
 
-var client = &http.Client{
+var httpClient = &http.Client{
 	Transport: &http.Transport{
 		DisableKeepAlives: false, DisableCompression: false,
 		MaxIdleConnsPerHost: 128}}
 
-type weedMaster string
-
-func newWeedMaster(url string) weedMaster {
-	return weedMaster(url)
-}
-
-func (wm weedMaster) URL() string {
-	return string(wm)
-}
-
-func (wm weedMaster) assignFid() (resp weedAssignResponse, err error) {
-	err = masterGet(&resp, wm.URL()+"/dir/assign")
-	if err == nil && resp.Fid == "" {
-		err = errors.New("no file id!")
-	}
-	return
-}
-
-func (wm weedMaster) getFidURL(fid string) (url string, err error) {
+func (w WeedClient) getFidURL(fid string) (url string, err error) {
 	var vid string
 	if i := strings.Index(fid, ","); i > 0 {
 		vid = fid[:i]
@@ -79,7 +136,7 @@ func (wm weedMaster) getFidURL(fid string) (url string, err error) {
 		vid = fid
 	}
 	var resp weedLookupResponse
-	e := masterGet(&resp, wm.URL()+"/dir/lookup?volumeId="+vid)
+	e := masterGet(&resp, w.URL()+"/dir/lookup?volumeId="+vid)
 	if e == nil && (resp.Locations == nil || len(resp.Locations) == 0 || resp.Locations[0].PublicURL == "") {
 		e = fmt.Errorf("no public url for %s (resp=%s)", vid, resp)
 	}
@@ -107,46 +164,6 @@ func masterGet(resp interface{}, url string) (err error) {
 	return
 }
 
-// Upload uploads the payload
-func (wm weedMaster) upload(resp weedAssignResponse, filename, contentType string, body io.Reader) (url string, err error) {
-	url = "http://" + resp.PublicURL + "/" + resp.Fid
-	var respBody []byte
-	var e error
-	for i := 0; i < 3; i++ {
-		respBody, e = post(url, filename, contentType, body)
-		if e != nil {
-			log.Println(e)
-			err = fmt.Errorf("error POSTing to %s: %s", url, e)
-			time.Sleep(1 * time.Second)
-		} else {
-			break
-		}
-	}
-	log.Printf("POST %s response: %s", url, respBody)
-
-	return
-}
-
-func (wm weedMaster) download(fid string) (io.ReadCloser, error) {
-	url, err := wm.getFidURL(fid)
-	if err != nil {
-		return nil, err
-	}
-	return getURL(url, "")
-}
-
-func (wm weedMaster) delete(fid string) error {
-	url, err := wm.getFidURL(fid)
-	if err != nil {
-		return err
-	}
-	body, err := getURL(url, "DELETE")
-	if body != nil {
-		body.Close()
-	}
-	return err
-}
-
 // GetURL GETs the url, returns the body reader
 func getURL(url, method string) (io.ReadCloser, error) {
 	var (
@@ -166,14 +183,14 @@ func getURL(url, method string) (io.ReadCloser, error) {
 			method = "GET"
 		}
 		if method == "GET" {
-			resp, err = client.Get(url)
+			resp, err = httpClient.Get(url)
 		} else {
 			req, err = http.NewRequest(method, url, nil)
 			if err != nil {
 				return nil, fmt.Errorf("error creating %s request for %s: %s",
 					method, url, err)
 			}
-			resp, err = client.Do(req)
+			resp, err = httpClient.Do(req)
 		}
 		if resp == nil {
 			// return nil, fmt.Errorf("nil response for %s!", url)
@@ -226,7 +243,7 @@ func post(url, filename, contentType string, body io.Reader) (respBody []byte, e
 		log.Printf("calling %s %s %s CL=%d n=%d", req.Method, req.URL, req.Header,
 			req.ContentLength, len(reqbuf.Bytes()))
 		log.Printf("req=%q", reqbuf.Bytes())
-		resp, e = client.Do(req)
+		resp, e = httpClient.Do(req)
 		if e == nil {
 			break
 		}
@@ -302,4 +319,10 @@ var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")
 
 func escapeQuotes(s string) string {
 	return quoteEscaper.Replace(s)
+}
+
+func debug(format string, args ...interface{}) {
+	if Debug {
+		log.Printf(format, args...)
+	}
 }
