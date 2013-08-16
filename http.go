@@ -34,12 +34,15 @@ import (
 // Debug if you want log messages
 var Debug bool
 
+// WeedClient is the Weed-FS client
 type WeedClient string
 
+// NewWeedClient returns a new client using the given Weed-FS master URL
 func NewWeedClient(masterURL string) WeedClient {
 	return WeedClient(masterURL)
 }
 
+// URL returns the master URL
 func (w WeedClient) URL() string {
 	return string(w)
 }
@@ -54,7 +57,7 @@ func (w WeedClient) Upload(filename, contentType string, body io.Reader) (fileID
 	return
 }
 
-// Upload uploads the named file using the Assign-returned fileID and publicURL
+// UploadAssigned uploads the named file using the Assign-returned fileID and publicURL
 func (w WeedClient) UploadAssigned(fileID, publicURL, filename, contentType string, body io.Reader) (url string, err error) {
 	url = "http://" + publicURL + "/" + fileID
 	var respBody []byte
