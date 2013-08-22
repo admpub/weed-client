@@ -47,6 +47,19 @@ func (w WeedClient) URL() string {
 	return string(w)
 }
 
+type weedStatusResponse struct {
+	Version  string
+	Topology map[string]interface{}
+}
+
+// Status returns the status (Version and topology) of the master
+func (w WeedClient) Status() (version string, topology map[string]interface{}, err error) {
+	var resp weedStatusResponse
+	err = masterGet(&resp, w.URL()+"/dir/status")
+	return resp.Version, resp.Topology, err
+
+}
+
 // Upload uploads the named file, Assigning a new fileID, and returning it
 func (w WeedClient) Upload(filename, contentType string, body io.Reader) (fileID string, err error) {
 	var publicURL string
