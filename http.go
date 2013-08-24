@@ -256,9 +256,15 @@ func post(url, filename, contentType string, body io.Reader) (respBody []byte, e
 	//req.Header.Set("Accept-Encoding", "ident")
 
 	for i := 0; i < 10; i++ {
-		log.Printf("calling %s %s %s CL=%d n=%d", req.Method, req.URL, req.Header,
-			req.ContentLength, len(reqbuf.Bytes()))
-		log.Printf("req=%q", reqbuf.Bytes())
+		if Debug {
+			m := len(reqbuf.Bytes())
+			if m > 40 {
+				m = 40
+			}
+			debug("calling %s %s %s CL=%d n=%d", req.Method, req.URL, req.Header,
+				req.ContentLength, len(reqbuf.Bytes()))
+			debug("req=%q", reqbuf.Bytes()[:m])
+		}
 		resp, e = httpClient.Do(req)
 		if e == nil {
 			break
@@ -308,7 +314,7 @@ func post(url, filename, contentType string, body io.Reader) (respBody []byte, e
 func encodePayload(w io.Writer, r io.Reader, filename, contentType string) (string, int64, error) {
 	mw := multipart.NewWriter(w)
 	defer mw.Close()
-	log.Printf("fn=%q", filename)
+	debug("fn=%q", filename)
 	fw, err := createFormFile(mw, "file", filename, contentType)
 	// fw, err := mw.CreateFormFile("file", filename)
 	if err != nil {
