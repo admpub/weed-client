@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package weed
+package weedfs
 
 import (
 	"bytes"
@@ -34,34 +34,31 @@ import (
 // Debug if you want log messages
 var Debug bool
 
-// WeedClient is the Weed-FS client
-type WeedClient string
-
-// NewWeedClient returns a new client using the given Weed-FS master URL
-func NewWeedClient(masterURL string) WeedClient {
-	return WeedClient(masterURL)
+// Client is the Weed-FS client
+type Client struct {
+	URL string
 }
 
-// URL returns the master URL
-func (w WeedClient) URL() string {
-	return string(w)
+// NewClient returns a new client using the given Weed-FS master URL
+func NewClient(masterURL string) *Client {
+	return &Client{masterURL}
 }
 
-type weedStatusResponse struct {
+type StatusResponse struct {
 	Version  string
 	Topology map[string]interface{}
 }
 
 // Status returns the status (Version and topology) of the master
-func (w WeedClient) Status() (version string, topology map[string]interface{}, err error) {
-	var resp weedStatusResponse
-	err = masterGet(&resp, w.URL()+"/dir/status")
+func (w *Client) Status() (version string, topology map[string]interface{}, err error) {
+	var resp StatusResponse
+	err = masterGet(&resp, w.URL+"/dir/status")
 	return resp.Version, resp.Topology, err
 
 }
 
 // Upload uploads the named file, Assigning a new fileID, and returning it
-func (w WeedClient) Upload(filename, contentType string, body io.Reader) (fileID string, err error) {
+func (w *Client) Upload(filename, contentType string, body io.Reader) (fileID string, err error) {
 	var publicURL string
 	if fileID, publicURL, err = w.AssignFid(); err != nil {
 		return
@@ -71,7 +68,7 @@ func (w WeedClient) Upload(filename, contentType string, body io.Reader) (fileID
 }
 
 // UploadAssigned uploads the named file using the Assign-returned fileID and publicURL
-func (w WeedClient) UploadAssigned(fileID, publicURL, filename, contentType string, body io.Reader) (url string, err error) {
+func (w *Client) UploadAssigned(fileID, publicURL, filename, contentType string, body io.Reader) (url string, err error) {
 	url = "http://" + publicURL + "/" + fileID
 	var respBody []byte
 	var e error
@@ -91,7 +88,7 @@ func (w WeedClient) UploadAssigned(fileID, publicURL, filename, contentType stri
 }
 
 // Download downloads the given fileID
-func (wm WeedClient) Download(fileID string) (io.ReadCloser, error) {
+func (wm *Client) Download(fileID string) (io.ReadCloser, error) {
 	url, err := wm.getFidURL(fileID)
 	if err != nil {
 		return nil, err
@@ -100,7 +97,7 @@ func (wm WeedClient) Download(fileID string) (io.ReadCloser, error) {
 }
 
 // Delete deletes the given fileID
-func (wm WeedClient) Delete(fileID string) error {
+func (wm *Client) Delete(fileID string) error {
 	url, err := wm.getFidURL(fileID)
 	if err != nil {
 		return err
@@ -113,9 +110,9 @@ func (wm WeedClient) Delete(fileID string) error {
 }
 
 // AssignFid assigns a new fileID
-func (w WeedClient) AssignFid() (fileID, publicURL string, err error) {
-	var resp weedAssignResponse
-	err = masterGet(&resp, w.URL()+"/dir/assign")
+func (w *Client) AssignFid() (fileID, publicURL string, err error) {
+	var resp AssignResponse
+	err = masterGet(&resp, w.URL+"/dir/assign")
 	if err == nil && resp.Fid == "" {
 		err = errors.New("no file id!")
 	}
@@ -123,14 +120,14 @@ func (w WeedClient) AssignFid() (fileID, publicURL string, err error) {
 }
 
 // {"count":1,"fid":"3,01637037d6","url":"127.0.0.1:8080","publicUrl":"localhost:8080"}
-type weedAssignResponse struct {
+type AssignResponse struct {
 	Count     int    `json:"count"`
 	Fid       string `json:"fid"`
 	URL       string `json:"url"`
 	PublicURL string `json:"publicUrl"`
 }
 
-type weedLookupResponse struct {
+type LookupResponse struct {
 	Locations []wmLocation `json:"locations"`
 }
 
@@ -144,15 +141,15 @@ var httpClient = &http.Client{
 		DisableKeepAlives: false, DisableCompression: false,
 		MaxIdleConnsPerHost: 128}}
 
-func (w WeedClient) getFidURL(fid string) (url string, err error) {
+func (w *Client) getFidURL(fid string) (url string, err error) {
 	var vid string
 	if i := strings.Index(fid, ","); i > 0 {
 		vid = fid[:i]
 	} else {
 		vid = fid
 	}
-	var resp weedLookupResponse
-	e := masterGet(&resp, w.URL()+"/dir/lookup?volumeId="+vid)
+	var resp LookupResponse
+	e := masterGet(&resp, w.URL+"/dir/lookup?volumeId="+vid)
 	if e == nil && (resp.Locations == nil || len(resp.Locations) == 0 || resp.Locations[0].PublicURL == "") {
 		e = fmt.Errorf("no public url for %s (resp=%s)", vid, resp)
 	}
