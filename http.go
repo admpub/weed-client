@@ -44,6 +44,7 @@ func NewClient(masterURL string) *Client {
 	return &Client{masterURL}
 }
 
+// StatusResponse is the response for the status request: version and topology
 type StatusResponse struct {
 	Version  string
 	Topology map[string]interface{}
@@ -119,6 +120,7 @@ func (w *Client) AssignFid() (fileID, publicURL string, err error) {
 	return resp.Fid, resp.PublicURL, err
 }
 
+// AssignResponse is the response for an assign (new file upload) such as
 // {"count":1,"fid":"3,01637037d6","url":"127.0.0.1:8080","publicUrl":"localhost:8080"}
 type AssignResponse struct {
 	Count     int    `json:"count"`
@@ -127,6 +129,7 @@ type AssignResponse struct {
 	PublicURL string `json:"publicUrl"`
 }
 
+// LookupResponse is the response for lookup request: locations
 type LookupResponse struct {
 	Locations []wmLocation `json:"locations"`
 }
